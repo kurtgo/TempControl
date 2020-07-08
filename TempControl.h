@@ -7,12 +7,14 @@
 
 #ifndef LIBRARIES_TEMPCONTROL_TEMPCONTROL_H_
 #define LIBRARIES_TEMPCONTROL_TEMPCONTROL_H_
-#include "IRremote2.h"
+#include "hvac.h"
 
 #define SLOTS 5
 class TempControl {
+protected:
+	Print& log;
 public:
-	TempControl();
+	TempControl(Print &log, int pin);
 	virtual ~TempControl();
 
 	void setTemp(float temp) { desiredtemp = temp; curstate=RESTART;}
@@ -37,7 +39,7 @@ public:
 protected:
 	void calcSlope(void);
 
-	IRsend2 irsend;
+	HVAC_CONTROL irsend;
 	float desiredtemp;
 	float lasttemp[SLOTS];
 	int cur_slot;

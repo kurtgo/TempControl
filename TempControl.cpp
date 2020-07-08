@@ -5,10 +5,12 @@
  *      Author: kghome
  */
 
-#include <TempControl.h>
 #include <Arduino.h>
-#include "IRremote2.h"
-TempControl::TempControl() {
+#include <TempControl.h>
+#include <math.h>
+
+
+TempControl::TempControl(Print &debug, int pin) : log(debug),irsend(pin) {
 
 	worktime = 0;
 	average = 0;
@@ -34,22 +36,22 @@ void TempControl::setstate(enum FANSTATE state, int curtemp)
 		case RESTART:
 			break;  // should not get here
 		case OVERTEMP_SPEED:
-			irsend.sendHvacMitsubishi(HVAC_COLD, desiredtemp-5, FAN_SPEED_5, VANNE_AUTO_MOVE, false);
+			irsend.sendHvacMitsubishi(HVAC_CONTROL::HVAC_COLD, 15, HVAC_CONTROL::FAN_SPEED_5, HVAC_CONTROL::VANNE_AUTO_MOVE, false);
 			break;
 		case HIGH_SPEED:
-			irsend.sendHvacMitsubishi(HVAC_COLD, desiredtemp-5, FAN_SPEED_4, VANNE_H1, false);
+			irsend.sendHvacMitsubishi(HVAC_CONTROL::HVAC_COLD, 15, HVAC_CONTROL::FAN_SPEED_4, HVAC_CONTROL::VANNE_H1, false);
 			break;
 		case MED_SPEED:
-			irsend.sendHvacMitsubishi(HVAC_COLD, desiredtemp-3, FAN_SPEED_3, VANNE_H1, false);
+			irsend.sendHvacMitsubishi(HVAC_CONTROL::HVAC_COLD, 15, HVAC_CONTROL::FAN_SPEED_3, HVAC_CONTROL::VANNE_H1, false);
 			break;
 		case NORMAL_SPEED:
-			irsend.sendHvacMitsubishi(HVAC_COLD, desiredtemp-3, FAN_SPEED_2, VANNE_H1, false);
+			irsend.sendHvacMitsubishi(HVAC_CONTROL::HVAC_COLD, 15, HVAC_CONTROL::FAN_SPEED_2, HVAC_CONTROL::VANNE_H1, false);
 			break;
 		case LOW_SPEED:
-			irsend.sendHvacMitsubishi(HVAC_COLD, desiredtemp-3, FAN_SPEED_1, VANNE_H1, false);
+			irsend.sendHvacMitsubishi(HVAC_CONTROL::HVAC_COLD, 15, HVAC_CONTROL::FAN_SPEED_1, HVAC_CONTROL::VANNE_H1, false);
 			break;
 		case OFF:
-			irsend.sendHvacMitsubishi(HVAC_COLD, desiredtemp-5, FAN_SPEED_AUTO, VANNE_AUTO_MOVE, true);
+			irsend.sendHvacMitsubishi(HVAC_CONTROL::HVAC_COLD, 33, HVAC_CONTROL::FAN_SPEED_AUTO, HVAC_CONTROL::VANNE_AUTO_MOVE, true);
 			break;
 		}
 		interrupts();
@@ -102,6 +104,8 @@ float TempControl::updateTemp(float ctemp, int humidity)
 
 	bool change_allowed = lastchange_seconds > CHANGE_LIMIT;
 
+	if (curstate == RESTART) change_allowed = true;
+
 	if (first_time) {
 		for (i=0;i<SLOTS;++i)
 			lasttemp[i] = ctemp;
@@ -118,16 +122,18 @@ float TempControl::updateTemp(float ctemp, int humidity)
 	float stdev = 0;
 
 	for (i=0;i<SLOTS;++i) {
-		stdev += square(lasttemp[i]-curtemp);
+		stdev += (lasttemp[i]-curtemp)*(lasttemp[i]-curtemp);
 	}
 	stdev = stdev / SLOTS;
 	stdev = sqrt(stdev);
 
-	Serial.print(F("avg:"));
-	Serial.print(curtemp);
-	Serial.print(F(" stdev:"));
-	Serial.print(stdev);
-	Serial.print(F(" "));
+	log.print(F("avg:"));
+	log.print(curtemp);
+	log.print(F(" stdev:"));
+	log.print(stdev);
+	log.print(F(" set:"));
+	log.print(desiredtemp);
+	log.print(F(" "));
 
 	calcSlope();
 
@@ -144,15 +150,15 @@ float TempControl::updateTemp(float ctemp, int humidity)
 		swing = 2; // 2degree swing on off work times...
 		//change_allowed = false;
 	}
-	Serial.print("diff: ");
-	Serial.print(diff,2);
-	Serial.print("slope: ");
-	Serial.print(slope,2);
-	Serial.print("swing: ");
-	Serial.print(swing,2);
+	log.print("diff: ");
+	log.print(diff,2);
+	log.print("slope: ");
+	log.print(slope,2);
+	log.print("swing: ");
+	log.print(swing,2);
 
 	if (diff > swing*2) {
-		Serial.print(F("OFF-COLD"));
+		log.print(F("OFF-COLD"));
 		setstate(OFF,desiredtemp);
 	} else
 	// cold, decrease cooling
@@ -162,7 +168,7 @@ float TempControl::updateTemp(float ctemp, int humidity)
 			setstate(OFF,desiredtemp);
 		} else
 		if (slope <= 0 && curstate > LOW_SPEED && change_allowed ) {
-			setstate((int)curstate-1,desiredtemp);
+			setstate((FANSTATE)((int)curstate-1),desiredtemp);
 		}
 	} else
 	// hot, increase cooling
@@ -173,9 +179,9 @@ float TempControl::updateTemp(float ctemp, int humidity)
 	} else {
 		// if we are over temp, then slowly increase fan speed until we are cool again
 		if (curstate <= HIGH_SPEED && slope > 0 && change_allowed ) {
-			setstate((int)curstate+1,desiredtemp);
+			setstate((FANSTATE)((int)curstate+1),desiredtemp);
 		}
 	}
-
+    log.println("- end");
 	return desiredtemp;
 }
