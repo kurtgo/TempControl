@@ -100,9 +100,11 @@ float TempControl::updateTemp(float ctemp, int humidity)
 	unsigned long now = millis();
 	// seconds since we changed the fan settings
 	unsigned long lastchange_seconds = ((now - change_time) + 500) / 1000;
-#define CHANGE_LIMIT (60+60+30) // minimum of 3 minutes between changes to allow average to work
+#define CHANGE_LIMIT (60*5) // minimum of 3 minutes between changes to allow average to work
+#define STUCK_LIMIT (60*60) // maximum run time if no change
 
 	bool change_allowed = lastchange_seconds > CHANGE_LIMIT;
+	bool long_run = lastchange_seconds > STUCK_LIMIT;
 
 	if (curstate == RESTART) change_allowed = true;
 
@@ -133,6 +135,8 @@ float TempControl::updateTemp(float ctemp, int humidity)
 	log.print(stdev);
 	log.print(F(" set:"));
 	log.print(desiredtemp);
+	log.print(F(" since:"));
+	log.print(lastchange_seconds);
 	log.print(F(" "));
 
 	calcSlope();
@@ -145,19 +149,19 @@ float TempControl::updateTemp(float ctemp, int humidity)
 	float diff = desiredtemp - curtemp;
 	float swing;
 	if (worktime) {
-		swing = .15;
+		swing = .5;
 	} else {
-		swing = 2; // 2degree swing on off work times...
+		swing = 1; // 2degree swing on off work times...
 		//change_allowed = false;
 	}
-	log.print("diff: ");
+	log.print(" diff: ");
 	log.print(diff,2);
-	log.print("slope: ");
+	log.print(" slope: ");
 	log.print(slope,2);
-	log.print("swing: ");
+	log.print(" swing: ");
 	log.print(swing,2);
 
-	if (diff > swing*2) {
+	if (diff > swing) {
 		log.print(F("OFF-COLD"));
 		setstate(OFF,desiredtemp);
 	} else
@@ -168,6 +172,10 @@ float TempControl::updateTemp(float ctemp, int humidity)
 			setstate(OFF,desiredtemp);
 		} else
 		if (slope <= 0 && curstate > LOW_SPEED && change_allowed ) {
+			setstate((FANSTATE)((int)curstate-1),desiredtemp);
+		} else
+		// avoid being in same speed for long time
+		if (slope <= 0.1 && curstate > OFF && long_run ) {
 			setstate((FANSTATE)((int)curstate-1),desiredtemp);
 		}
 	} else
@@ -180,8 +188,31 @@ float TempControl::updateTemp(float ctemp, int humidity)
 		// if we are over temp, then slowly increase fan speed until we are cool again
 		if (curstate <= HIGH_SPEED && slope > 0 && change_allowed ) {
 			setstate((FANSTATE)((int)curstate+1),desiredtemp);
+		} else
+		// avoid being in same speed for long time with a small slope
+		if (curstate < HIGH_SPEED && slope > -.2 && long_run ) {
+			setstate((FANSTATE)((int)curstate+1),desiredtemp);
 		}
 	}
-    log.println("- end");
+	log.print(" state: ");
+	log.print(curstate);
+    log.println(" - end");
 	return desiredtemp;
+}
+float TempControl::get_curtemp(void) {
+        float average;
+	int i;
+	average = 0;
+	for (i=0;i<SLOTS;++i)
+		average += lasttemp[i];
+
+	float curtemp = average/SLOTS;
+   	return curtemp;
+	float stdev = 0;
+
+	for (i=0;i<SLOTS;++i) {
+		stdev += (lasttemp[i]-curtemp)*(lasttemp[i]-curtemp);
+	}
+	stdev = stdev / SLOTS;
+	stdev = sqrt(stdev);
 }

@@ -19,6 +19,9 @@ public:
 
 	void setTemp(float temp) { desiredtemp = temp; curstate=RESTART;}
 	double getSlope(void);
+        int get_hvac(void) { return curstate; }
+	float get_curtemp(void);
+	int get_set_temp(void) { return desiredtemp; }
 	void checkTemp(int curtemp);
 	enum FANSTATE {
 		RESTART,
